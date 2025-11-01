@@ -170,7 +170,7 @@ def main():
         with st.expander("View Staged Diff", expanded=False):
             st.code(diff_content, language='diff')
 
-        if st.button("Run AI Code Review", type="primary", use_container_width=True):
+        if st.button("🚀 Review Code", type="primary", use_container_width=True):
             with st.spinner(f"Reviewing with {LLM_MODEL}..."):
                 review_data = run_code_review(diff_content)
 
@@ -192,26 +192,51 @@ def main():
                 if 'show_fix' not in st.session_state:
                     st.session_state.show_fix = False
 
-                if st.button("Apply Auto-Fix (Guide)", type="success"):
-                    st.session_state.show_fix = not st.session_state.show_fix
+                col_apply, col_guide = st.columns([1, 1])
+                with col_apply:
+                    if st.button("Apply to GitHub (Auto-PR)", type="success", use_container_width=True):
+                        with st.spinner("Creating PR on GitHub..."):
+                            try:
+                                import apply_fix_to_github as gh
+                                import inspect
+                                import textwrap
+
+                                # Extract the original code block from diff (simplified)
+                                diff_lines = diff_content.strip().split('\n')
+                                added_lines = [line[1:] for line in diff_lines if line.startswith('+') and not line.startswith('+++')]
+                                old_code = textwrap.dedent(''.join(added_lines)).strip()
+
+                                if not old_code:
+                                    st.error("Could not detect modified code block.")
+                                else:
+                                    pr = gh.create_pr_with_fix(
+                                        repo=st.secrets.get("GITHUB_REPO", "your-username/your-repo"),
+                                        branch=f"ai-fix-{int(time.time())}",
+                                        file_path="app.py",
+                                        old_code=old_code,
+                                        new_code=fix_code,
+                                        commit_message="fix: AI-suggested code improvement",
+                                        pr_title="AI Fix: Apply LLM suggestion",
+                                        pr_body=f"Automatically applied fix from AI code review.\n\n**Original diff**:\n```diff\n{diff_content}\n```",
+                                    )
+                                    pr_url = pr["html_url"]
+                                    st.success(f"PR created! [View on GitHub]({pr_url})")
+                            except Exception as e:
+                                st.error(f"Failed to create PR: {e}")
+
+                with col_guide:
+                    if st.button("Show Manual Guide"):
+                        st.session_state.show_fix = not st.session_state.show_fix
 
                 if st.session_state.show_fix:
-                    with st.expander("Auto-Fix Application Guide", expanded=True):
-                        st.warning("Direct file edits disabled in sandbox. Follow steps below.")
+                    with st.expander("Manual Fix Guide", expanded=True):
+                        st.warning("Direct edits disabled. Use steps below.")
                         st.subheader("1. Suggested Fix")
                         st.code(fix_code, language='python')
-
                         st.subheader("2. Apply Manually")
-                        st.code("""
-# 1. Open the modified file in your editor
-# 2. Replace the old code with the block above
-# 3. Stage the fix:
-git add <path/to/file>
-# 4. Commit:
-git commit -m "fix: AI-suggested improvement"
-# 5. Push:
-git push
-                        """, language='bash')
+                        st.code("""git add app.py
+                        git commit -m "fix: AI suggestion"
+                        git push origin HEAD""", language="bash")
             else:
                 st.info("No critical auto-fixes suggested.")
 
