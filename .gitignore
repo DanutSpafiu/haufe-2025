@@ -1,0 +1,14 @@
+# Python environments and compilation
+__pycache__/
+venv/
+
+# Dependencies
+/node_modules/
+*.egg-info/
+
+# Local LLM files and log files
+/ollama_models/
+*.log
+
+# Operating System files
+.DS_Store

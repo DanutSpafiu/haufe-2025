@@ -1,0 +1,3 @@
+ollama
+streamlit
+python-dotenv (for secrets/config)
