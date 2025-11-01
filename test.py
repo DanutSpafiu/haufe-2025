@@ -10,3 +10,8 @@ def add_item(item, items=[]):
     items.append(item)
     return items
 
+def wrong_find_prime_number(n):
+    if n % 2 == 0:
+        return True
+    else:
+        return False
