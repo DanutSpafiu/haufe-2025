@@ -1,0 +1,46 @@
+{
+  "coding_guidelines": {
+    "general": {
+      "naming_conventions": {
+        "variables": "snake_case for Python, camelCase for JS/Java",
+        "constants": "UPPER_CASE_WITH_UNDERSCORES",
+        "functions_methods": "snake_case for Python, camelCase for JS/Java",
+        "classes": "PascalCase"
+      },
+      "indentation": 4,
+      "line_length": 100,
+      "comments": {
+        "style": "Use comments to explain why, not what. Use # in Python, // in JS/Java.",
+        "docstrings": "All public functions and classes should have docstrings."
+      },
+      "error_handling": "Use try/except wisely; provide meaningful error messages.",
+      "logging": "Use logging instead of print statements in production code.",
+      "security": "Do not hardcode secrets; validate external inputs."
+    },
+    "python": {
+      "imports": "Standard library first, then third-party, then local modules.",
+      "typing": "Use type hints for public functions.",
+      "linting": "Use flake8 or pylint for consistent style.",
+      "testing": {
+        "framework": "pytest",
+        "coverage": "Aim for at least 80% test coverage"
+      }
+    },
+    "git": {
+      "branch_naming": {
+        "feature": "feature/<short-description>",
+        "bugfix": "bugfix/<short-description>"
+      },
+      "commit_messages": {
+        "format": "<type>: <short description>",
+        "types": ["feat", "fix", "docs", "style", "refactor", "test", "chore"]
+      },
+      "pull_requests": "All PRs must be reviewed and pass CI tests"
+    },
+    "best_practices": {
+      "code_reviews": "Always request review; provide constructive comments.",
+      "refactoring": "Refactor incrementally, avoid large unrelated changes.",
+      "performance": "Avoid premature optimization; measure performance if necessary."
+    }
+  }
+}

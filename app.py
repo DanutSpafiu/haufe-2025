@@ -5,6 +5,7 @@ import time
 import re
 import json
 import yaml
+import textwrap
 
 # --- CONFIGURATION ---
 LLM_MODEL = 'gemma3'  # Change to your model (e.g., 'codellama', 'gemma2:2b')
@@ -58,9 +59,9 @@ def load_guidelines(uploaded_file) -> str:
         st.error(f"Failed to parse guidelines: {e}")
         return ""
 
-# --- Run Code Review with LLM ---
+# --- Run Code Review with LLM (UPDATED for Cost/Resource Tracking) ---
 def run_code_review(code_content: str) -> dict:
-    """Analyzes git diff using LLM with custom guidelines."""
+    """Analyzes git diff using LLM with custom guidelines and tracks resource usage."""
     custom_guidelines = st.session_state.get('custom_guidelines', '')
     guidelines_block = f"\n\n**CUSTOM CODING GUIDELINES**:\n{custom_guidelines}\n" if custom_guidelines else ""
 
@@ -85,12 +86,18 @@ def run_code_review(code_content: str) -> dict:
     3.  **Automatic Fixes**: For one high-priority issue, provide an immediate fix in a code block. This fix should represent the replacement code, NOT a git patch. If no fixes are critical, state 'None provided.'
         * Format for fix: Start the line with `[FIX_START]` and end the block with `[FIX_END]`.
         
-    4.  **Documentation Suggestions**: Briefly recommend any necessary updates to related documentation (README, API docs, etc.) or state 'None needed.'
+    4.  **Documentation Suggestions**: List every file that needs an update (e.g., `README.md`, `docs/api.md`) followed by the exact markdown text to add/insert.  
+        If nothing is required, write **exactly**: `Documentation Suggestions: None needed.`
     """
+
+    user_content = f"Review this git diff:\n\n{code_content}"
+    
+    # COST MANAGEMENT: Track input size
+    input_size_chars = len(SYSTEM_PROMPT) + len(user_content)
 
     messages = [
         {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': f"Review this git diff:\n\n{code_content}"},
+        {'role': 'user', 'content': user_content},
     ]
 
     start_time = time.time()
@@ -102,9 +109,19 @@ def run_code_review(code_content: str) -> dict:
         )
         latency = time.time() - start_time
         review_text = response['message']['content']
-        return {'review': review_text, 'time': latency}
+        
+        # COST MANAGEMENT: Track output size
+        output_size_chars = len(review_text)
+
+        return {
+            'review': review_text, 
+            'time': latency,
+            'input_chars': input_size_chars,
+            'output_chars': output_size_chars
+        }
     except Exception as e:
-        return {'review': f"LLM Review Failed: {e}", 'time': 0}
+        # Ensure we return the input size even on failure
+        return {'review': f"LLM Review Failed: {e}", 'time': 0, 'input_chars': input_size_chars, 'output_chars': 0}
 
 # --- Get Staged Git Changes ---
 def get_staged_changes() -> str:
@@ -121,22 +138,51 @@ def get_staged_changes() -> str:
         st.error("Git not found. Install Git and ensure it's in PATH.")
         return ""
 
-# --- Extract Auto-Fix Code ---
+# Extract Auto-Fix Code
 def extract_fixes(review_text: str) -> str:
     """Extract code between [FIX_START] and [FIX_END]."""
     match = re.search(r'\[FIX_START\]\s*```.*?(\w*)\n(.*?)\s*```\s*\[FIX_END\]', review_text, re.DOTALL)
     return match.group(2).strip() if match else ""
 
-# --- Main App ---
+# Documentation Suggestions
+def extract_doc_suggestions(review_text: str) -> list[dict]:
+    """
+    Pulls the **Documentation Suggestions** section from the LLM output.
+    Returns a list of dicts: [{'file': 'README.md', 'content': '…'}, …]
+    """
+    pattern = r"(?i)Documentation\s+Suggestions\s*:\s*(.+?)(?=(\n\d+\.\s|\Z))"
+    raw = re.search(pattern, review_text, re.DOTALL)
+    if not raw:
+        return []
+
+    suggestions = []
+    lines = raw.group(1).strip().splitlines()
+    current_file = None
+    current_block = []
+
+    for line in lines:
+        file_match = re.match(r"^\s*([-\w./]+)\s*[:\-]\s*(.*)", line)
+        if file_match:
+            if current_file:
+                suggestions.append({"file": current_file, "content": "\n".join(current_block).strip()})
+            current_file = file_match.group(1).strip()
+            current_block = [file_match.group(2).strip()] if file_match.group(2) else []
+        elif current_file and line.strip():
+            current_block.append(line.strip())
+
+    if current_file:
+        suggestions.append({"file": current_file, "content": "\n".join(current_block).strip()})
+
+    return suggestions
+
 def main():
     st.set_page_config(page_title="AI Code Review", layout="wide")
-    st.title("AI-Powered Code Review Assistant")
-    st.markdown("### Incremental Review with **Gemma 3** via Ollama + **Custom Guidelines**")
+    st.title("🤖 CodeGod")
+    st.markdown("### Code Review with **Gemma 3** via Ollama")
     st.caption("Upload `.json` or `.yaml` to define your team's coding standards.")
 
     st.divider()
 
-    # --- Guideline Import UI ---
     col_guide, col_reset = st.columns([4, 1])
     with col_guide:
         uploaded = st.file_uploader(
@@ -150,16 +196,14 @@ def main():
             for k in keys_to_clear:
                 del st.session_state[k]
             st.success("Guidelines reset to default.")
-            st.experimental_rerun()
+            st.rerun()
 
-    # Load and store guidelines
     if uploaded:
         guideline_text = load_guidelines(uploaded)
         if guideline_text:
             st.session_state.custom_guidelines = guideline_text
             st.success("Custom guidelines loaded!")
 
-    # --- Get Git Diff ---
     diff_content = get_staged_changes()
 
     if not diff_content:
@@ -170,20 +214,35 @@ def main():
         with st.expander("View Staged Diff", expanded=False):
             st.code(diff_content, language='diff')
 
-        if st.button("🚀 Review Code", type="primary", use_container_width=True):
+        if st.button("Review Code", type="primary", use_container_width=True):
             with st.spinner(f"Reviewing with {LLM_MODEL}..."):
                 review_data = run_code_review(diff_content)
 
             st.markdown("---")
-            col1, col2 = st.columns([1, 3])
+            
+            # COST MANAGEMENT: Display Resource Metrics (UPDATED)
+            col1, col2, col3, col4 = st.columns(4)
 
             with col1:
                 st.metric("Review Time", f"{review_data['time']:.2f}s")
-
+            
             with col2:
-                st.subheader("LLM Review")
-                clean_review = review_data['review'].replace('[FIX_START]', '').replace('[FIX_END]', '')
-                st.markdown(clean_review)
+                # Estimate tokens: 1 token is roughly 4 characters (for English text)
+                input_tokens = int(review_data['input_chars'] / 4) 
+                st.metric("Prompt Size (est.)", f"{input_tokens:,} tokens")
+
+            with col3:
+                output_tokens = int(review_data['output_chars'] / 4)
+                st.metric("Response Size (est.)", f"{output_tokens:,} tokens")
+                
+            with col4:
+                st.metric("Total Characters", f"{(review_data['input_chars'] + review_data['output_chars']):,}")
+                
+            st.markdown("---")
+            
+            st.subheader("LLM Review")
+            clean_review = review_data['review'].replace('[FIX_START]', '').replace('[FIX_END]', '')
+            st.markdown(clean_review)
 
             # --- Auto-Fix Section ---
             fix_code = extract_fixes(review_data['review'])
@@ -198,10 +257,8 @@ def main():
                         with st.spinner("Creating PR on GitHub..."):
                             try:
                                 import apply_fix_to_github as gh
-                                import inspect
-                                import textwrap
 
-                                # Extract the original code block from diff (simplified)
+                                # Extract added lines from diff
                                 diff_lines = diff_content.strip().split('\n')
                                 added_lines = [line[1:] for line in diff_lines if line.startswith('+') and not line.startswith('+++')]
                                 old_code = textwrap.dedent(''.join(added_lines)).strip()
@@ -235,10 +292,52 @@ def main():
                         st.code(fix_code, language='python')
                         st.subheader("2. Apply Manually")
                         st.code("""git add app.py
-                        git commit -m "fix: AI suggestion"
-                        git push origin HEAD""", language="bash")
+git commit -m "fix: AI suggestion"
+git push origin HEAD""", language="bash")
             else:
                 st.info("No critical auto-fixes suggested.")
+
+            # --- Documentation Suggestions Section ---
+            doc_suggestions = extract_doc_suggestions(review_data['review'])
+            if doc_suggestions:
+                st.markdown("---")
+                st.subheader("Documentation Suggestions")
+                for idx, sug in enumerate(doc_suggestions, 1):
+                    file_name = sug["file"]
+                    content   = sug["content"]
+
+                    with st.expander(f"{idx}. `{file_name}`", expanded=False):
+                        st.markdown("**Suggested addition / update**")
+                        preview = f"```markdown\n{content}\n```"
+                        st.markdown(preview)
+
+                        # One-click copy
+                        copy_key = f"copy_doc_{idx}"
+                        if st.button("Copy to Clipboard", key=copy_key):
+                            st.code(content, language="markdown")
+                            st.success("Copied! Paste it into the file manually or use the auto-PR button below.")
+
+                        # Auto-PR for docs (optional)
+                        if st.button("Create Docs PR", key=f"pr_doc_{idx}", help="Opens a PR that appends the suggestion"):
+                            with st.spinner("Creating Documentation PR…"):
+                                try:
+                                    import apply_fix_to_github as gh
+                                    pr = gh.create_pr_with_fix(
+                                        repo=st.secrets.get("GITHUB_REPO", "your-username/your-repo"),
+                                        branch=f"ai-doc-{int(time.time())}",
+                                        file_path=file_name,
+                                        old_code="",                     # we are *appending*
+                                        new_code=content + "\n",
+                                        commit_message=f"docs: update {file_name} (AI suggestion)",
+                                        pr_title=f"Docs: AI-suggested update for `{file_name}`",
+                                        pr_body=f"Automatically generated documentation update.\n\n**Suggested content**:\n```markdown\n{content}\n```",
+                                        append=True
+                                    )
+                                    st.success(f"Docs PR created! [View]({pr['html_url']})")
+                                except Exception as e:
+                                    st.error(f"Docs PR failed: {e}")
+            else:
+                st.info("**Documentation Suggestions**: None needed.")
 
             st.markdown("---")
             st.caption("CI/CD: This app auto-deploys to Streamlit Cloud on push to `main`.")
