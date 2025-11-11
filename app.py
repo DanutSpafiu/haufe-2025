@@ -72,7 +72,7 @@ def run_code_review(code_content: str) -> dict:
     **GUIDELINE AWARENESS CHECK**: Prioritize checking for violations of **PEP8** (especially naming conventions, maximum 79-character line length, and whitespace rules) and general readability standards.
     {guidelines_block}
 
-    Your response MUST be in clear Markdown and follow this precise structure:
+    Your response MUST be in clear Markdown, except number 3) where the output should be displayed in the corresponding programming language markdown and follow this precise structure:
 
     1.  **Verdict and Effort Estimation**: A brief high-level summary. Must include an Effort Estimation (Low, Medium, or High) to apply suggested changes.
         * Example: 'Minor stylistic suggestions. Effort: Low.'
@@ -84,6 +84,7 @@ def run_code_review(code_content: str) -> dict:
         * Adherence to best practices (including Architecture or CI/CD impact).
 
     3.  **Automatic Fixes**: For one high-priority issue, provide an immediate fix in a code block. This fix should represent the replacement code, NOT a git patch. If no fixes are critical, state 'None provided.'
+        *All code must be enclosed in a Markdown code block with the language identifier specified (e.g., ```python ... ```), with proper coloring and syntax.
         * Format for fix: Start the line with `[FIX_START]` and end the block with `[FIX_END]`.
         
     4.  **Documentation Suggestions**: List every file that needs an update (e.g., `README.md`, `docs/api.md`) followed by the exact markdown text to add/insert.  
@@ -214,7 +215,7 @@ def main():
         with st.expander("View Staged Diff", expanded=False):
             st.code(diff_content, language='diff')
 
-        if st.button("Review Code", type="primary", use_container_width=True):
+        if st.button("🚀Review Code", type="primary", use_container_width=True):
             with st.spinner(f"Reviewing with {LLM_MODEL}..."):
                 review_data = run_code_review(diff_content)
 
@@ -343,4 +344,5 @@ git push origin HEAD""", language="bash")
             st.caption("CI/CD: This app auto-deploys to Streamlit Cloud on push to `main`.")
 
 if __name__ == "__main__":
-    main()
+    main()   
+    #streamlit run .\app.py
